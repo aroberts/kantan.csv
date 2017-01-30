@@ -39,6 +39,17 @@ object RowDecoder extends GeneratedRowDecoders with DecoderCompanion[Seq[String]
     * This is essentially a shorter way of calling `implicitly[RowDecoder[A]]`.
     */
   def apply[A](implicit ev: RowDecoder[A]): RowDecoder[A] = macro imp.summon[RowDecoder[A]]
+
+  private type Decode[A] = Seq[String] => DecodeResult[A]
+  private def invalidDiscriminator[C](data: C): Decode[Nothing] = RowDecoder.from(
+    _ => DecodeResult.typeError(s"Couldn't decode discriminator: $data")
+  ).decode
+
+  def fromDiscriminator[C: CellDecoder, A](index: Int)(discriminator: PartialFunction[C, Decode[A]]): RowDecoder[A] =
+    RowDecoder.from(input ⇒ for {
+      data ← input.lift(index).map(CellDecoder[C].decode).getOrElse(DecodeResult.outOfBounds(index))
+      discriminated ← discriminator.applyOrElse(data, invalidDiscriminator)(input)
+    } yield discriminated)
 }
 
 /** Provides reasonable default [[RowDecoder]] instances for various types. */
